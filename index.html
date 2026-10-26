@@ -238,14 +238,15 @@ let hist=[],pend=0;
 function sayq(t){if(!('speechSynthesis' in window))return;const u=new SpeechSynthesisUtterance(t);u.lang='pt-BR';const v=speechSynthesis.getVoices().find(v=>v.lang&&v.lang.startsWith('pt'));if(v)u.voice=v;u.rate=1;u.pitch=.8;speaking=true;pend++;u.onend=u.onerror=()=>{pend--;if(pend<=0)setTimeout(()=>{if(pend<=0)speaking=false},500)};speechSynthesis.speak(u)}
 const sys=()=>'Você é o JARVIS, assistente de voz de um app de treino. Responda sempre em português do Brasil, de forma direta e cortês, chamando o usuário de "senhor". Suas respostas são faladas em voz alta: no máximo 3 frases curtas, sem listas, sem markdown e sem emojis. Se a pergunta for sobre treino, use o histórico do usuário quando ajudar. Últimas séries do usuário: '+(logs.slice(-12).map(l=>(X[l.ex]?X[l.ex].n:l.ex)+' '+l.kg+'kg x'+l.reps).join('; ')||'nenhuma')+'.';
 async function askAI(q){
- const key=ls.g('ai.key');
- if(!key){say('Preciso da chave da IA, senhor. Configure no quadro Inteligência, na aba Jarvis.');return}
+ const key=ls.g('gm.key');
+ if(!key){say('Preciso da chave do Gemini, senhor. Configure no quadro Inteligência, na aba Jarvis.');return}
  hist.push({role:'user',content:q});
  const m={w:'j',t:'…'};chat.push(m);
  const upd=()=>{const c=$('#chat');if(c)c.innerHTML=chatHtml()};upd();
  try{
-  const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'content-type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-haiku-5-5',max_tokens:300,stream:true,system:sys(),messages:hist})});
-  if(!r.ok)throw new Error(r.status===401?'A chave da IA parece inválida, senhor.':r.status===429?'Muitas perguntas em sequência, senhor. Tente de novo em instantes.':'A IA retornou o erro '+r.status+'. Verifique se há crédito na conta da API.');
+  const mdl=ls.g('gm.model')||'gemini-flash-latest';
+  const r=await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(mdl)+':streamGenerateContent?alt=sse',{method:'POST',headers:{'content-type':'application/json','x-goog-api-key':key},body:JSON.stringify({systemInstruction:{parts:[{text:sys()}]},contents:hist.map(h=>({role:h.role==='assistant'?'model':'user',parts:[{text:h.content}]})),generationConfig:{maxOutputTokens:1024}})});
+  if(!r.ok)throw new Error(r.status===400?'O Gemini recusou o pedido, senhor. Confira se a chave está correta.':r.status===403?'A chave do Gemini não tem permissão, senhor. Crie uma nova no Google AI Studio.':r.status===404?'O modelo '+mdl+' não foi encontrado, senhor. Troque o nome do modelo no quadro Inteligência.':r.status===429?'Atingimos o limite gratuito do Gemini, senhor. Tente de novo em instantes.':'O Gemini retornou o erro '+r.status+'.');
   const rd=r.body.getReader(),dec=new TextDecoder();let buf='',full='',sp='';
   while(true){
    const {done,value}=await rd.read();if(done)break;
@@ -253,15 +254,16 @@ async function askAI(q){
    for(const ln of lines){
     if(!ln.startsWith('data:'))continue;
     let j;try{j=JSON.parse(ln.slice(5))}catch(e){continue}
-    if(j.type==='content_block_delta'&&j.delta&&j.delta.text){
-     full+=j.delta.text;sp+=j.delta.text;m.t=full;upd();
+    const tx=((j.candidates&&j.candidates[0]&&j.candidates[0].content&&j.candidates[0].content.parts)||[]).filter(x=>x.text&&!x.thought).map(x=>x.text).join('');
+    if(tx){
+     full+=tx;sp+=tx;m.t=full;upd();
      let k;while((k=sp.search(/[.!?](\s|$)/))>=0&&k<sp.length-1){sayq(sp.slice(0,k+1));sp=sp.slice(k+1).trimStart()}}}}
   if(sp.trim())sayq(sp);
   hist.push({role:'assistant',content:full});hist=hist.slice(-8);
  }catch(e){
   hist.pop();chat.splice(chat.indexOf(m),1);
   say(e instanceof TypeError?'Não consegui falar com a IA, senhor. Verifique a conexão.':e.message)}}
-const aiPanel=()=>'<div class="hist" style="margin-top:12px"><h3>Inteligência</h3><p class="small">'+(ls.g('ai.key')?'Chave salva neste aparelho. O Jarvis responde qualquer pergunta que não seja um comando.':'Cole a chave da API da Anthropic para o Jarvis responder qualquer pergunta.')+'</p><div class="cmd"><input id="aikey" type="password" autocomplete="off" placeholder="sk-ant-..." aria-label="Chave da API"><button data-act="aisave">Salvar</button></div>'+(ls.g('ai.key')?'<div class="cmd"><button data-act="aiout" style="background:var(--panel);color:var(--tx);border:1px solid var(--line)">Remover chave</button></div>':'')+'</div>';
+const aiPanel=()=>'<div class="hist" style="margin-top:12px"><h3>Inteligência (Gemini)</h3><p class="small">'+(ls.g('gm.key')?'Chave salva neste aparelho. O Jarvis responde qualquer pergunta que não seja um comando.':'Cole a chave do Gemini (aistudio.google.com/apikey) para o Jarvis responder qualquer pergunta.')+'</p><div class="cmd"><input id="aikey" type="password" autocomplete="off" placeholder="AIza..." aria-label="Chave do Gemini"><button data-act="aisave">Salvar</button></div><div class="cmd"><input id="gmmodel" placeholder="Modelo (padrão: gemini-flash-latest)" value="'+ls.g('gm.model')+'" aria-label="Modelo do Gemini"></div>'+(ls.g('gm.key')?'<div class="cmd"><button data-act="aiout" style="background:var(--panel);color:var(--tx);border:1px solid var(--line)">Remover chave</button></div>':'')+'</div>';
 
 /* ---------- eventos ---------- */
 document.addEventListener('click',e=>{
@@ -277,8 +279,8 @@ document.addEventListener('click',e=>{
  else if(a==='stop')stopRest();
  else if(a==='mic')toggleMic();
  else if(a==='send'){const i=$('#ti');if(i.value.trim()){run(i.value.replace(/^jarvis[,\s]*/i,''));i.value=''}}
- else if(a==='aisave'){const v=$('#aikey').value.trim();if(v){ls.s('ai.key',v);render()}}
- else if(a==='aiout'){ls.d('ai.key');hist=[];render()}
+ else if(a==='aisave'){const v=$('#aikey').value.trim();if(v)ls.s('gm.key',v);ls.s('gm.model',$('#gmmodel').value.trim());render()}
+ else if(a==='aiout'){ls.d('gm.key');hist=[];render()}
  else if(a==='spsave'){ls.s('sp.id',$('#spid').value.trim());render()}
  else if(a==='spconn'){const i=$('#spid');if(i&&i.value.trim())ls.s('sp.id',i.value.trim());spLogin()}
  else if(a==='spout'){['sp.at','sp.rt','sp.exp'].forEach(k=>ls.d(k));render()}

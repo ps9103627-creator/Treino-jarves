@@ -66,7 +66,7 @@ button:focus-visible,input:focus-visible,a:focus-visible{outline:2px solid var(-
 </style>
 </head>
 <body>
-<main id="app"></main>
+<main><div id="app"></div><div id="ytbox" style="display:none;margin-top:14px"><div id="ytp"></div><button class="clear" data-act="ytclose">Fechar player</button></div></main>
 <div id="rest" role="timer"><span>Descanso</span><strong id="rt">0:00</strong><button data-act="plus">+15s</button><button data-act="stop">Parar</button></div>
 <nav class="nav"><button data-tab="w">Treinos</button><button data-tab="h">Evolução</button><button data-tab="j">Jarvis</button></nav>
 <script>
@@ -150,7 +150,7 @@ let listening=false,rec=null,speaking=false;
 function viewJ(){
  let h='<h1>Jarvis</h1><div class="orbwrap"><button class="orb '+(listening?'on':'')+'" data-act="mic" aria-pressed="'+listening+'">'+(listening?'Escutando':'Ativar')+'</button></div><div class="status" id="st">'+(listening?'Diga “Jarvis” para chamar.':(SR?'Toque para ativar a escuta contínua.':'Este navegador não tem reconhecimento de voz. Use o campo de texto.'))+'</div>';
  h+='<div class="chips">'+['Jarvis, inicie o cronômetro de descanso de 60 segundos','Jarvis, anote que fiz 12 repetições com 20 kg no agachamento','Jarvis, pesquise no Google qual a melhor substituição para o supino reto','Jarvis, coloque a minha playlist de treino no Spotify'].map(c=>'<button data-ex-cmd="'+c+'">'+c.replace('Jarvis, ','')+'</button>').join('')+'</div><div id="chat">'+chatHtml()+'</div>';
- return h+'<div class="cmd"><input id="ti" placeholder="Digite um comando" aria-label="Comando"><button data-act="send">Enviar</button></div><p class="small">A escuta funciona enquanto esta página estiver aberta. Se o microfone for bloqueado, abra o link em tela cheia e permita o acesso.</p>'+spPanel()+aiPanel()}
+ return h+'<div class="cmd"><input id="ti" placeholder="Digite um comando" aria-label="Comando"><button data-act="send">Enviar</button></div><p class="small">A escuta funciona enquanto esta página estiver aberta. Se o microfone for bloqueado, abra o link em tela cheia e permita o acesso.</p>'+musPanel()+spPanel()+aiPanel()}
 const chatHtml=()=>chat.map(m=>'<div class="msg '+m.w+'">'+m.t.replace(/</g,'&lt;')+(m.l?'<br><a href="'+m.l+'" target="_blank" rel="noopener">Abrir</a>':'')+'</div>').join('');
 function msg(w,t,l){chat.push({w,t,l});const c=$('#chat');if(c)c.innerHTML=chatHtml()}
 function render(){
@@ -171,12 +171,13 @@ function handle(raw){
   const kg=parseFloat(m[2].replace(',','.')),reps=+m[1];addLog(id,kg,reps);if(S.tab==='h')render();
   return{text:'Anotado, senhor: '+reps+' repetições com '+kg+' quilos em '+X[id].n+'.'}}
  if(m=raw.match(/pesquis\w*\s+(?:no google\s+)?(.+)/i)){const q=m[1].trim(),l='https://www.google.com/search?q='+encodeURIComponent(q);return{text:'Pesquisando “'+q+'” no Google, senhor.',link:l}}
+ if(m=t.match(/volume\s*(?:para|em|a)?\s*(\d+)/))return{text:'Ajustando o volume, senhor.',sp:{k:'vol',v:Math.min(100,+m[1])}};
  if(/pausar|pause|pare a musica|para a musica/.test(t))return{text:'Pausando, senhor.',sp:{k:'pause'}};
  if(/proxima (musica|faixa)/.test(t))return{text:'Próxima faixa, senhor.',sp:{k:'next'}};
  if(/spotify|playlist|toque|tocar|coloque|musica/.test(t)){let q='playlist de treino';if(!/playlist/.test(t)&&(m=raw.match(/(?:toque|tocar|coloque|coloca)\s+(.+)/i)))q=m[1].replace(/\s*no spotify/i,'');
   return{text:'Abrindo “'+q+'” no Spotify, senhor.',link:'https://open.spotify.com/search/'+encodeURIComponent(q),sp:{k:/playlist/.test(t)?'playlist':'track',q}}}
  return{ai:true}}
-async function run(raw){msg('u',raw);const r=handle(raw);if(r.sp&&spReady()){try{say(await spAction(r.sp))}catch(e){say(e.message)}return}if(r.ai){await askAI(raw);return}say(r.text);if(r.link){msg('j','Link pronto.',r.link);try{window.open(r.link,'_blank','noopener')}catch(e){}}}
+async function run(raw){msg('u',raw);const r=handle(raw);if(r.sp&&ls.g('mus')==='youtube'){try{say(await ytAction(r.sp))}catch(e){say(e.message)}return}if(r.sp&&spReady()){try{say(await spAction(r.sp))}catch(e){const u=r.sp.url||((r.sp.k==='playlist'||r.sp.k==='track')?r.link:'');if(e.status===403&&u){say('Sua conta não é Premium, senhor, então não consigo iniciar a música sozinho. Abri no Spotify, é só tocar em play.');msg('j','Link pronto.',u);try{window.open(u,'_blank','noopener')}catch(x){}}else say(e.message)}return}if(r.ai){await askAI(raw);return}say(r.text);if(r.link){msg('j','Link pronto.',r.link);try{window.open(r.link,'_blank','noopener')}catch(e){}}}
 function heard(raw){
  if(speaking)return;
  if(/jarvis/i.test(raw)){const rest=raw.replace(/.*?jarvis[,.!\s]*/i,'').trim();
@@ -216,10 +217,11 @@ async function spApi(path,opt={}){
  const r=await fetch('https://api.spotify.com/v1'+path,{...opt,headers:{Authorization:'Bearer '+t,'Content-Type':'application/json'}});
  if(r.status===204)return{};
  let j={};try{j=await r.json()}catch(e){}
- if(!r.ok)throw new Error(r.status===404?'Não achei um aparelho ativo, senhor. Abra o Spotify no celular e toque numa música uma vez.':r.status===403?'O Spotify recusou o comando, senhor. Controlar a reprodução exige conta Premium.':r.status===401?'Preciso reconectar ao Spotify, senhor.':'O Spotify retornou o erro '+r.status+'.');
+ if(!r.ok)throw Object.assign(new Error(r.status===404?'Não achei um aparelho ativo, senhor. Abra o Spotify no celular e toque numa música uma vez.':r.status===403?'O Spotify recusou o comando, senhor. Controlar a reprodução exige conta Premium.':r.status===401?'Preciso reconectar ao Spotify, senhor.':'O Spotify retornou o erro '+r.status+'.'),{status:r.status});
  return j}
-async function spAction({k,q}){
+async function spAction(sp){const {k,q}=sp;
  if(k==='pause'){await spApi('/me/player/pause',{method:'PUT'});return'Pausado, senhor.'}
+ if(k==='vol'){await spApi('/me/player/volume?volume_percent='+sp.v,{method:'PUT'});return'Volume em '+sp.v+' por cento, senhor.'}
  if(k==='next'){await spApi('/me/player/next',{method:'POST'});return'Próxima faixa, senhor.'}
  if(k==='playlist'){
   const words=norm(q).split(/\s+/).filter(w=>w.length>2&&!['minha','playlist','de','do','da'].includes(w));
@@ -227,10 +229,10 @@ async function spAction({k,q}){
   let pl=(mine.items||[]).filter(Boolean).find(p=>words.length&&words.every(w=>norm(p.name).includes(w)));
   if(!pl){const s=await spApi('/search?type=playlist&limit=10&q='+encodeURIComponent(q));pl=((s.playlists&&s.playlists.items)||[]).filter(Boolean)[0]}
   if(!pl)return'Não encontrei essa playlist, senhor.';
-  await spApi('/me/player/play',{method:'PUT',body:JSON.stringify({context_uri:pl.uri})});return'Tocando '+pl.name+', senhor.'}
+  sp.url=pl.external_urls&&pl.external_urls.spotify;await spApi('/me/player/play',{method:'PUT',body:JSON.stringify({context_uri:pl.uri})});return'Tocando '+pl.name+', senhor.'}
  const s=await spApi('/search?type=track&limit=1&q='+encodeURIComponent(q));
  const tr=s.tracks&&s.tracks.items&&s.tracks.items[0];if(!tr)return'Não encontrei essa música, senhor.';
- await spApi('/me/player/play',{method:'PUT',body:JSON.stringify({uris:[tr.uri]})});return'Tocando '+tr.name+', de '+tr.artists[0].name+'.'}
+ sp.url=tr.external_urls&&tr.external_urls.spotify;await spApi('/me/player/play',{method:'PUT',body:JSON.stringify({uris:[tr.uri]})});return'Tocando '+tr.name+', de '+tr.artists[0].name+'.'}
 const spPanel=()=>{const on=spReady();return '<div class="hist" style="margin-top:18px"><h3>Spotify</h3><p class="small">'+(on?'Conectado. O Jarvis controla o Spotify do seu aparelho.':'Cole o Client ID do seu app no Spotify e conecte.')+'</p><div class="cmd"><input id="spid" placeholder="Client ID" value="'+ls.g('sp.id')+'" aria-label="Client ID do Spotify"><button data-act="spsave">Salvar</button></div><p class="small">Redirect URI para cadastrar no Spotify:<br><b>'+SPR()+'</b></p><div class="cmd"><button data-act="spconn">'+(on?'Reconectar':'Conectar ao Spotify')+'</button>'+(on?'<button data-act="spout" style="background:var(--panel);color:var(--tx);border:1px solid var(--line)">Desconectar</button>':'')+'</div></div>'};
 
 /* ---------- IA (Claude Haiku, resposta em streaming) ---------- */
@@ -265,6 +267,33 @@ async function askAI(q){
   say(e instanceof TypeError?'Não consegui falar com a IA, senhor. Verifique a conexão.':e.message)}}
 const aiPanel=()=>'<div class="hist" style="margin-top:12px"><h3>Inteligência (Gemini)</h3><p class="small">'+(ls.g('gm.key')?'Chave salva neste aparelho. O Jarvis responde qualquer pergunta que não seja um comando.':'Cole a chave do Gemini (aistudio.google.com/apikey) para o Jarvis responder qualquer pergunta.')+'</p><div class="cmd"><input id="aikey" type="password" autocomplete="off" placeholder="AIza..." aria-label="Chave do Gemini"><button data-act="aisave">Salvar</button></div><div class="cmd"><input id="gmmodel" placeholder="Modelo (padrão: gemini-flash-latest)" value="'+ls.g('gm.model')+'" aria-label="Modelo do Gemini"></div>'+(ls.g('gm.key')?'<div class="cmd"><button data-act="aiout" style="background:var(--panel);color:var(--tx);border:1px solid var(--line)">Remover chave</button></div>':'')+'</div>';
 
+/* ---------- YouTube (grátis) ---------- */
+let ytP=null,ytRd=null;
+function ytLoad(){
+ if(ytRd)return ytRd;
+ ytRd=Promise.race([new Promise(res=>{window.onYouTubeIframeAPIReady=()=>{ytP=new YT.Player('ytp',{width:'100%',height:200,playerVars:{playsinline:1,rel:0},events:{onReady:()=>res(ytP)}})};const t=document.createElement('script');t.src='https://www.youtube.com/iframe_api';document.head.appendChild(t)}),new Promise((_,rej)=>setTimeout(()=>rej(new Error('Não consegui carregar o player do YouTube, senhor.')),8000))]);
+ ytRd.catch(()=>{ytRd=null});return ytRd}
+const ytShow=()=>{$('#ytbox').style.display='block'};
+function ytId(u){const r={};try{const x=new URL(u);r.list=x.searchParams.get('list');r.v=x.searchParams.get('v')||(x.hostname==='youtu.be'?x.pathname.slice(1):'')}catch(e){r.list=u.trim()}return r}
+async function ytAction(sp){
+ const k=sp.k;
+ if(k==='pause'){if(ytP)ytP.pauseVideo();return'Pausado, senhor.'}
+ if(k==='next'){if(ytP)ytP.nextVideo();return'Próxima faixa, senhor.'}
+ if(k==='vol'){if(ytP)ytP.setVolume(sp.v);return'Volume em '+sp.v+' por cento, senhor.'}
+ if(k==='playlist'){
+  const u=ls.g('yt.pl');if(!u)return'Cadastre o link da sua playlist no quadro Música, senhor.';
+  const id=ytId(u);ytShow();const p=await ytLoad();
+  if(id.list)p.loadPlaylist({list:id.list,listType:'playlist'});else if(id.v)p.loadVideoById(id.v);else return'O link da playlist parece inválido, senhor.';
+  return'Tocando sua playlist de treino, senhor.'}
+ const key=ls.g('yt.key');
+ if(!key){const l='https://www.youtube.com/results?search_query='+encodeURIComponent(sp.q);msg('j','Busca pronta.',l);try{window.open(l,'_blank','noopener')}catch(e){}return'Sem a chave de busca do YouTube não consigo escolher a faixa sozinho, senhor. Abri a busca para você.'}
+ const r=await fetch('https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&videoEmbeddable=true&maxResults=1&q='+encodeURIComponent(sp.q)+'&key='+encodeURIComponent(key));
+ if(!r.ok)throw new Error('A busca do YouTube falhou, senhor. Confira a chave e se a YouTube Data API está ativada.');
+ const j=await r.json(),it=j.items&&j.items[0];if(!it)return'Não encontrei essa música, senhor.';
+ const d=document.createElement('textarea');d.innerHTML=it.snippet.title;
+ ytShow();const p=await ytLoad();p.loadVideoById(it.id.videoId);return'Tocando '+d.value+'.'}
+const musPanel=()=>{const yt=ls.g('mus')==='youtube',off='background:var(--panel);color:var(--tx);border:1px solid var(--line)';return '<div class="hist" style="margin-top:18px"><h3>Música</h3><p class="small">Escolha qual player o Jarvis controla. O YouTube é grátis e toca aqui dentro do app.</p><div class="cmd"><button data-act="musspot" style="'+(yt?off:'')+'">Spotify</button><button data-act="musyt" style="'+(yt?'':off)+'">YouTube (grátis)</button></div><p class="small" style="margin-top:12px">Link da sua playlist de treino no YouTube:</p><div class="cmd"><input id="ytpl" placeholder="https://www.youtube.com/playlist?list=..." value="'+ls.g('yt.pl')+'" aria-label="Link da playlist"></div><p class="small" style="margin-top:12px">Chave do YouTube Data API (opcional, para tocar músicas pelo nome)'+(ls.g('yt.key')?' — já salva':'')+':</p><div class="cmd"><input id="ytkey" type="password" autocomplete="off" placeholder="AIza..." aria-label="Chave do YouTube"><button data-act="ytsave">Salvar</button></div></div>'};
+
 /* ---------- eventos ---------- */
 document.addEventListener('click',e=>{
  const b=e.target.closest('button');if(!b)return;
@@ -279,6 +308,10 @@ document.addEventListener('click',e=>{
  else if(a==='stop')stopRest();
  else if(a==='mic')toggleMic();
  else if(a==='send'){const i=$('#ti');if(i.value.trim()){run(i.value.replace(/^jarvis[,\s]*/i,''));i.value=''}}
+ else if(a==='musspot'){ls.s('mus','spotify');render()}
+ else if(a==='musyt'){ls.s('mus','youtube');render()}
+ else if(a==='ytsave'){ls.s('yt.pl',$('#ytpl').value.trim());const k=$('#ytkey').value.trim();if(k)ls.s('yt.key',k);render()}
+ else if(a==='ytclose'){if(ytP)ytP.pauseVideo();$('#ytbox').style.display='none'}
  else if(a==='aisave'){const v=$('#aikey').value.trim();if(v)ls.s('gm.key',v);ls.s('gm.model',$('#gmmodel').value.trim());render()}
  else if(a==='aiout'){ls.d('gm.key');hist=[];render()}
  else if(a==='spsave'){ls.s('sp.id',$('#spid').value.trim());render()}

@@ -6,6 +6,7 @@
 <title>Treino Jarvis</title>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icon-192.png">
+<meta name="referrer" content="strict-origin-when-cross-origin">
 <meta name="theme-color" content="#0A111D">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -66,7 +67,7 @@ button:focus-visible,input:focus-visible,a:focus-visible{outline:2px solid var(-
 </style>
 </head>
 <body>
-<main><div id="app"></div><div id="ytbox" style="display:none;margin-top:14px"><div id="ytp"></div><button class="clear" data-act="ytclose">Fechar player</button></div></main>
+<main><div id="app"></div><div id="ytbox" style="display:none;margin-top:14px"><div id="ytp"></div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="clear" data-act="vdn">Volume −</button><button class="clear" data-act="vup">Volume +</button><button class="clear" data-act="ytclose">Fechar player</button></div></div></main>
 <div id="rest" role="timer"><span>Descanso</span><strong id="rt">0:00</strong><button data-act="plus">+15s</button><button data-act="stop">Parar</button></div>
 <nav class="nav"><button data-tab="w">Treinos</button><button data-tab="h">Evolução</button><button data-tab="j">Jarvis</button></nav>
 <script>
@@ -149,8 +150,8 @@ const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
 let listening=false,rec=null,speaking=false;
 function viewJ(){
  let h='<h1>Jarvis</h1><div class="orbwrap"><button class="orb '+(listening?'on':'')+'" data-act="mic" aria-pressed="'+listening+'">'+(listening?'Escutando':'Ativar')+'</button></div><div class="status" id="st">'+(listening?'Diga “Jarvis” para chamar.':(SR?'Toque para ativar a escuta contínua.':'Este navegador não tem reconhecimento de voz. Use o campo de texto.'))+'</div>';
- h+='<div class="chips">'+['Jarvis, inicie o cronômetro de descanso de 60 segundos','Jarvis, anote que fiz 12 repetições com 20 kg no agachamento','Jarvis, pesquise no Google qual a melhor substituição para o supino reto','Jarvis, coloque a minha playlist de treino no Spotify'].map(c=>'<button data-ex-cmd="'+c+'">'+c.replace('Jarvis, ','')+'</button>').join('')+'</div><div id="chat">'+chatHtml()+'</div>';
- return h+'<div class="cmd"><input id="ti" placeholder="Digite um comando" aria-label="Comando"><button data-act="send">Enviar</button></div><p class="small">A escuta funciona enquanto esta página estiver aberta. Se o microfone for bloqueado, abra o link em tela cheia e permita o acesso.</p>'+musPanel()+spPanel()+aiPanel()}
+ h+='<div class="chips">'+['Jarvis, inicie o cronômetro de descanso de 60 segundos','Jarvis, anote que fiz 12 repetições com 20 kg no agachamento','Jarvis, pesquise no Google qual a melhor substituição para o supino reto','Jarvis, coloque a minha playlist de treino'].map(c=>'<button data-ex-cmd="'+c+'">'+c.replace('Jarvis, ','')+'</button>').join('')+'</div><div id="chat">'+chatHtml()+'</div>';
+ return h+'<div class="cmd"><input id="ti" placeholder="Digite um comando" aria-label="Comando"><button data-act="send">Enviar</button></div><p class="small">A escuta funciona enquanto esta página estiver aberta. Se o microfone for bloqueado, abra o link em tela cheia e permita o acesso.</p>'+musPanel()+aiPanel()+vpPanel()}
 const chatHtml=()=>chat.map(m=>'<div class="msg '+m.w+'">'+m.t.replace(/</g,'&lt;')+(m.l?'<br><a href="'+m.l+'" target="_blank" rel="noopener">Abrir</a>':'')+'</div>').join('');
 function msg(w,t,l){chat.push({w,t,l});const c=$('#chat');if(c)c.innerHTML=chatHtml()}
 function render(){
@@ -171,69 +172,40 @@ function handle(raw){
   const kg=parseFloat(m[2].replace(',','.')),reps=+m[1];addLog(id,kg,reps);if(S.tab==='h')render();
   return{text:'Anotado, senhor: '+reps+' repetições com '+kg+' quilos em '+X[id].n+'.'}}
  if(m=raw.match(/pesquis\w*\s+(?:no google\s+)?(.+)/i)){const q=m[1].trim(),l='https://www.google.com/search?q='+encodeURIComponent(q);return{text:'Pesquisando “'+q+'” no Google, senhor.',link:l}}
- if(m=t.match(/volume\s*(?:para|em|a)?\s*(\d+)/))return{text:'Ajustando o volume, senhor.',sp:{k:'vol',v:Math.min(100,+m[1])}};
- if(/pausar|pause|pare a musica|para a musica/.test(t))return{text:'Pausando, senhor.',sp:{k:'pause'}};
- if(/proxima (musica|faixa)/.test(t))return{text:'Próxima faixa, senhor.',sp:{k:'next'}};
- if(/spotify|playlist|toque|tocar|coloque|musica/.test(t)){let q='playlist de treino';if(!/playlist/.test(t)&&(m=raw.match(/(?:toque|tocar|coloque|coloca)\s+(.+)/i)))q=m[1].replace(/\s*no spotify/i,'');
-  return{text:'Abrindo “'+q+'” no Spotify, senhor.',link:'https://open.spotify.com/search/'+encodeURIComponent(q),sp:{k:/playlist/.test(t)?'playlist':'track',q}}}
+ const urlM=raw.match(/https?:\/\/\S*(?:youtube\.com|youtu\.be)\S*/i);
+ if(urlM)return{text:'Abrindo o link, senhor.',sp:{k:'url',u:urlM[0]}};
+ if(/volume|\bsom\b|mais (alto|baixo|forte)|mudo|silenci/.test(t)){
+  const num=t.match(/(\d+)/),dir=/aument|sobe|suba|eleve|elevar|mais (alto|forte)/.test(t)?1:/diminu|abaix|reduz|baix|menos/.test(t)?-1:0;
+  if(dir)return{text:'Ajustando o volume, senhor.',sp:{k:'volrel',d:dir*(num?+num[1]:15)}};
+  if(num)return{text:'Ajustando o volume, senhor.',sp:{k:'vol',v:Math.min(100,+num[1])}};
+  if(/maximo/.test(t))return{text:'Volume máximo, senhor.',sp:{k:'vol',v:100}};
+  if(/mudo|silenci|zerar/.test(t))return{text:'Silenciando, senhor.',sp:{k:'vol',v:0}}}
+ if(/pausar|pause|pare a musica|para a musica|parar a musica/.test(t))return{text:'Pausando, senhor.',sp:{k:'pause'}};
+ if(/proxima (musica|faixa|video)|pular (a )?musica/.test(t))return{text:'Próxima faixa, senhor.',sp:{k:'next'}};
+ const MV='toque|tocar|coloque|coloca|ponha|bota|reproduza|reproduzir|assista|assistir';
+ if(new RegExp('playlist|musica|video|\\b('+MV+')\\b').test(t)){
+  let q='playlist de treino';
+  if(!/playlist/.test(t)&&(m=raw.match(new RegExp('(?:'+MV+')\\s+(.+)','i'))))q=m[1].replace(/\s*no (spotify|youtube)\s*$/i,'').trim();
+  return{text:'Abrindo “'+q+'” no YouTube, senhor.',link:'https://www.youtube.com/results?search_query='+encodeURIComponent(q),sp:{k:/playlist/.test(t)?'playlist':'track',q}}}
  return{ai:true}}
-async function run(raw){msg('u',raw);const r=handle(raw);if(r.sp&&ls.g('mus')==='youtube'){try{say(await ytAction(r.sp))}catch(e){say(e.message)}return}if(r.sp&&spReady()){try{say(await spAction(r.sp))}catch(e){const u=r.sp.url||((r.sp.k==='playlist'||r.sp.k==='track')?r.link:'');if(e.status===403&&u){say('Sua conta não é Premium, senhor, então não consigo iniciar a música sozinho. Abri no Spotify, é só tocar em play.');msg('j','Link pronto.',u);try{window.open(u,'_blank','noopener')}catch(x){}}else say(e.message)}return}if(r.ai){await askAI(raw);return}say(r.text);if(r.link){msg('j','Link pronto.',r.link);try{window.open(r.link,'_blank','noopener')}catch(e){}}}
+async function run(raw){msg('u',raw);const r=handle(raw);if(r.sp){try{say(await ytAction(r.sp))}catch(e){say(e.message)}return}if(r.ai){await askAI(raw);return}say(r.text);if(r.link){msg('j','Link pronto.',r.link);try{window.open(r.link,'_blank','noopener')}catch(e){}}}
 function heard(raw){
- if(speaking)return;
- if(/jarvis/i.test(raw)){const rest=raw.replace(/.*?jarvis[,.!\s]*/i,'').trim();
+ if(speaking||S.enr)return;
+ const wk=/jarvis/i.test(raw);
+ if((wk||S.cmd)&&vpOn()){const r=vpCheck();if(!r.ok){if(wk)say('Voz não reconhecida, senhor.');msg('j','Verificação de voz negada'+(r.d?' (distância '+r.d.toFixed(2)+', limite '+r.lim.toFixed(2)+')':': '+r.why)+'.');return}}
+ if(wk){const rest=raw.replace(/.*?jarvis[,.!\s]*/i,'').trim();
   if(rest.length>3)run(rest);else{say('Olá, senhor. O que você precisa?');S.cmd=true;status('Pode falar…');clearTimeout(S.ct);S.ct=setTimeout(()=>{S.cmd=false;status('Diga “Jarvis” para chamar.')},10000)}}
  else if(S.cmd){S.cmd=false;run(raw);status('Diga “Jarvis” para chamar.')}}
 function toggleMic(){
  if(!SR){render();return}
- if(listening){listening=false;try{rec.stop()}catch(e){}render();return}
+ if(listening){listening=false;try{rec.stop()}catch(e){}vmStop();render();return}
  rec=new SR();rec.lang='pt-BR';rec.continuous=true;rec.interimResults=false;
  rec.onresult=e=>{for(let i=e.resultIndex;i<e.results.length;i++)if(e.results[i].isFinal)heard(e.results[i][0].transcript)};
  rec.onerror=e=>{if(e.error==='not-allowed'||e.error==='service-not-allowed'){listening=false;render();status('Microfone bloqueado. Permita o acesso ou use o campo de texto.')}};
  rec.onend=()=>{if(listening)setTimeout(()=>{try{rec.start()}catch(e){}},300)};
- listening=true;try{rec.start()}catch(e){}render()}
+ listening=true;if(vpOn())vmStart().catch(()=>msg('j','Não consegui iniciar a verificação de voz, senhor.'));try{rec.start()}catch(e){}render()}
 
-/* ---------- Spotify (PKCE, sem client secret) ---------- */
 const ls={g:k=>{try{return localStorage.getItem(k)||''}catch(e){return''}},s:(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}},d:k=>{try{localStorage.removeItem(k)}catch(e){}}};
-const SPR=()=>location.origin+location.pathname;
-const spReady=()=>!!ls.g('sp.rt');
-const b64=buf=>btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
-async function spLogin(){
- const id=ls.g('sp.id');if(!id){alert('Salve o Client ID primeiro.');return}
- const v=b64(crypto.getRandomValues(new Uint8Array(48)));ls.s('sp.v',v);
- const c=b64(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(v)));
- location.href='https://accounts.spotify.com/authorize?'+new URLSearchParams({client_id:id,response_type:'code',redirect_uri:SPR(),scope:'user-modify-playback-state user-read-playback-state playlist-read-private',code_challenge_method:'S256',code_challenge:c})}
-async function spToken(body){
- const r=await fetch('https://accounts.spotify.com/api/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({client_id:ls.g('sp.id'),...body})});
- const j=await r.json();if(!r.ok)throw new Error('Falha na autenticação do Spotify. Confira o Client ID e o Redirect URI.');
- ls.s('sp.at',j.access_token);if(j.refresh_token)ls.s('sp.rt',j.refresh_token);ls.s('sp.exp',Date.now()+j.expires_in*1000-60000);return j.access_token}
-async function spCallback(){
- const code=new URLSearchParams(location.search).get('code');if(!code)return;
- try{history.replaceState({},'',location.pathname)}catch(e){}
- S.tab='j';
- try{await spToken({grant_type:'authorization_code',code,redirect_uri:SPR(),code_verifier:ls.g('sp.v')});msg('j','Spotify conectado, senhor.')}catch(e){msg('j',e.message)}
- render()}
-async function spApi(path,opt={}){
- const t=(Date.now()<+ls.g('sp.exp'))?ls.g('sp.at'):await spToken({grant_type:'refresh_token',refresh_token:ls.g('sp.rt')});
- const r=await fetch('https://api.spotify.com/v1'+path,{...opt,headers:{Authorization:'Bearer '+t,'Content-Type':'application/json'}});
- if(r.status===204)return{};
- let j={};try{j=await r.json()}catch(e){}
- if(!r.ok)throw Object.assign(new Error(r.status===404?'Não achei um aparelho ativo, senhor. Abra o Spotify no celular e toque numa música uma vez.':r.status===403?'O Spotify recusou o comando, senhor. Controlar a reprodução exige conta Premium.':r.status===401?'Preciso reconectar ao Spotify, senhor.':'O Spotify retornou o erro '+r.status+'.'),{status:r.status});
- return j}
-async function spAction(sp){const {k,q}=sp;
- if(k==='pause'){await spApi('/me/player/pause',{method:'PUT'});return'Pausado, senhor.'}
- if(k==='vol'){await spApi('/me/player/volume?volume_percent='+sp.v,{method:'PUT'});return'Volume em '+sp.v+' por cento, senhor.'}
- if(k==='next'){await spApi('/me/player/next',{method:'POST'});return'Próxima faixa, senhor.'}
- if(k==='playlist'){
-  const words=norm(q).split(/\s+/).filter(w=>w.length>2&&!['minha','playlist','de','do','da'].includes(w));
-  const mine=await spApi('/me/playlists?limit=50');
-  let pl=(mine.items||[]).filter(Boolean).find(p=>words.length&&words.every(w=>norm(p.name).includes(w)));
-  if(!pl){const s=await spApi('/search?type=playlist&limit=10&q='+encodeURIComponent(q));pl=((s.playlists&&s.playlists.items)||[]).filter(Boolean)[0]}
-  if(!pl)return'Não encontrei essa playlist, senhor.';
-  sp.url=pl.external_urls&&pl.external_urls.spotify;await spApi('/me/player/play',{method:'PUT',body:JSON.stringify({context_uri:pl.uri})});return'Tocando '+pl.name+', senhor.'}
- const s=await spApi('/search?type=track&limit=1&q='+encodeURIComponent(q));
- const tr=s.tracks&&s.tracks.items&&s.tracks.items[0];if(!tr)return'Não encontrei essa música, senhor.';
- sp.url=tr.external_urls&&tr.external_urls.spotify;await spApi('/me/player/play',{method:'PUT',body:JSON.stringify({uris:[tr.uri]})});return'Tocando '+tr.name+', de '+tr.artists[0].name+'.'}
-const spPanel=()=>{const on=spReady();return '<div class="hist" style="margin-top:18px"><h3>Spotify</h3><p class="small">'+(on?'Conectado. O Jarvis controla o Spotify do seu aparelho.':'Cole o Client ID do seu app no Spotify e conecte.')+'</p><div class="cmd"><input id="spid" placeholder="Client ID" value="'+ls.g('sp.id')+'" aria-label="Client ID do Spotify"><button data-act="spsave">Salvar</button></div><p class="small">Redirect URI para cadastrar no Spotify:<br><b>'+SPR()+'</b></p><div class="cmd"><button data-act="spconn">'+(on?'Reconectar':'Conectar ao Spotify')+'</button>'+(on?'<button data-act="spout" style="background:var(--panel);color:var(--tx);border:1px solid var(--line)">Desconectar</button>':'')+'</div></div>'};
 
 /* ---------- IA (Claude Haiku, resposta em streaming) ---------- */
 let hist=[],pend=0;
@@ -269,30 +241,110 @@ const aiPanel=()=>'<div class="hist" style="margin-top:12px"><h3>Inteligência (
 
 /* ---------- YouTube (grátis) ---------- */
 let ytP=null,ytRd=null;
+function ytErr(e){
+ const c=e.data,vid=(ytP.getVideoData&&ytP.getVideoData().video_id)||'',pl=ytP.getPlaylist&&ytP.getPlaylist();
+ if((c===100||c===101||c===150)&&pl&&pl.length>1){ytP.nextVideo();return}
+ say(c===101||c===150?'O dono deste vídeo não permite tocá-lo aqui, senhor. Deixei o link para abrir no YouTube.':c===100?'Este vídeo não está disponível, senhor.':'O player do YouTube apresentou o erro '+c+', senhor.');
+ if(vid&&c!==100)msg('j','Abrir no YouTube.','https://www.youtube.com/watch?v='+vid)}
 function ytLoad(){
  if(ytRd)return ytRd;
- ytRd=Promise.race([new Promise(res=>{window.onYouTubeIframeAPIReady=()=>{ytP=new YT.Player('ytp',{width:'100%',height:200,playerVars:{playsinline:1,rel:0},events:{onReady:()=>res(ytP)}})};const t=document.createElement('script');t.src='https://www.youtube.com/iframe_api';document.head.appendChild(t)}),new Promise((_,rej)=>setTimeout(()=>rej(new Error('Não consegui carregar o player do YouTube, senhor.')),8000))]);
+ ytRd=Promise.race([new Promise(res=>{
+  const mk=()=>{ytP=new YT.Player('ytp',{width:'100%',height:200,playerVars:Object.assign({playsinline:1,rel:0},location.protocol.startsWith('http')?{origin:location.origin}:{}),events:{onReady:()=>res(ytP),onError:ytErr}})};
+  if(window.YT&&YT.Player)mk();else{window.onYouTubeIframeAPIReady=mk;if(!document.getElementById('ytapi')){const t=document.createElement('script');t.id='ytapi';t.src='https://www.youtube.com/iframe_api';document.head.appendChild(t)}}
+ }),new Promise((_,rej)=>setTimeout(()=>rej(new Error('Não consegui carregar o player do YouTube, senhor. Verifique a conexão.')),10000))]);
  ytRd.catch(()=>{ytRd=null});return ytRd}
 const ytShow=()=>{$('#ytbox').style.display='block'};
 function ytId(u){const r={};try{const x=new URL(u);r.list=x.searchParams.get('list');r.v=x.searchParams.get('v')||(x.hostname==='youtu.be'?x.pathname.slice(1):'')}catch(e){r.list=u.trim()}return r}
+async function ytPlay(u){
+ const id=ytId(u);
+ if(!(id.list&&!/^RD/.test(id.list))&&!id.v)return false;
+ ytShow();const p=await ytLoad();
+ if(id.list&&!/^RD/.test(id.list))p.loadPlaylist({list:id.list,listType:'playlist'});else p.loadVideoById(id.v);
+ return true}
 async function ytAction(sp){
  const k=sp.k;
  if(k==='pause'){if(ytP)ytP.pauseVideo();return'Pausado, senhor.'}
  if(k==='next'){if(ytP)ytP.nextVideo();return'Próxima faixa, senhor.'}
- if(k==='vol'){if(ytP)ytP.setVolume(sp.v);return'Volume em '+sp.v+' por cento, senhor.'}
+ if(k==='vol'||k==='volrel'){
+  if(/iPhone|iPad/.test(navigator.userAgent))return'No iPhone o volume só muda pelos botões do aparelho, senhor.';
+  if(!ytP||!ytP.getVolume)return'Não há nada tocando agora, senhor.';
+  const v=k==='vol'?sp.v:Math.max(0,Math.min(100,ytP.getVolume()+sp.d));
+  ytP.setVolume(v);return'Volume em '+v+' por cento, senhor.'}
+ if(k==='url')return(await ytPlay(sp.u))?'Tocando o link, senhor.':'Esse link parece inválido, senhor.';
  if(k==='playlist'){
   const u=ls.g('yt.pl');if(!u)return'Cadastre o link da sua playlist no quadro Música, senhor.';
-  const id=ytId(u);ytShow();const p=await ytLoad();
-  if(id.list)p.loadPlaylist({list:id.list,listType:'playlist'});else if(id.v)p.loadVideoById(id.v);else return'O link da playlist parece inválido, senhor.';
-  return'Tocando sua playlist de treino, senhor.'}
+  return(await ytPlay(u))?'Tocando sua playlist de treino, senhor.':'O link da playlist parece inválido, senhor.'}
  const key=ls.g('yt.key');
- if(!key){const l='https://www.youtube.com/results?search_query='+encodeURIComponent(sp.q);msg('j','Busca pronta.',l);try{window.open(l,'_blank','noopener')}catch(e){}return'Sem a chave de busca do YouTube não consigo escolher a faixa sozinho, senhor. Abri a busca para você.'}
+ if(!key){const l='https://www.youtube.com/results?search_query='+encodeURIComponent(sp.q);msg('j','Busca pronta.',l);try{window.open(l,'_blank','noopener')}catch(e){}return'Para escolher músicas pelo nome, preciso da chave de busca do YouTube, senhor. Abri a busca. Se preferir, cole o link do vídeo no quadro Música.'}
  const r=await fetch('https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&videoEmbeddable=true&maxResults=1&q='+encodeURIComponent(sp.q)+'&key='+encodeURIComponent(key));
  if(!r.ok)throw new Error('A busca do YouTube falhou, senhor. Confira a chave e se a YouTube Data API está ativada.');
- const j=await r.json(),it=j.items&&j.items[0];if(!it)return'Não encontrei essa música, senhor.';
+ const j=await r.json(),it=j.items&&j.items[0];if(!it)return'Não encontrei esse vídeo, senhor.';
  const d=document.createElement('textarea');d.innerHTML=it.snippet.title;
  ytShow();const p=await ytLoad();p.loadVideoById(it.id.videoId);return'Tocando '+d.value+'.'}
-const musPanel=()=>{const yt=ls.g('mus')==='youtube',off='background:var(--panel);color:var(--tx);border:1px solid var(--line)';return '<div class="hist" style="margin-top:18px"><h3>Música</h3><p class="small">Escolha qual player o Jarvis controla. O YouTube é grátis e toca aqui dentro do app.</p><div class="cmd"><button data-act="musspot" style="'+(yt?off:'')+'">Spotify</button><button data-act="musyt" style="'+(yt?'':off)+'">YouTube (grátis)</button></div><p class="small" style="margin-top:12px">Link da sua playlist de treino no YouTube:</p><div class="cmd"><input id="ytpl" placeholder="https://www.youtube.com/playlist?list=..." value="'+ls.g('yt.pl')+'" aria-label="Link da playlist"></div><p class="small" style="margin-top:12px">Chave do YouTube Data API (opcional, para tocar músicas pelo nome)'+(ls.g('yt.key')?' — já salva':'')+':</p><div class="cmd"><input id="ytkey" type="password" autocomplete="off" placeholder="AIza..." aria-label="Chave do YouTube"><button data-act="ytsave">Salvar</button></div></div>'};
+const musPanel=()=>'<div class="hist" style="margin-top:18px"><h3>Música e vídeos (YouTube)</h3><p class="small">Tocar agora: nome da música/vídeo ou link do YouTube.</p><div class="cmd"><input id="ytnow" placeholder="Eye of the Tiger ou https://youtu.be/..." aria-label="Tocar agora"><button data-act="ytnow">Tocar</button></div><p class="small" style="margin-top:12px">Link da sua playlist de treino:</p><div class="cmd"><input id="ytpl" placeholder="https://www.youtube.com/playlist?list=..." value="'+ls.g('yt.pl')+'" aria-label="Link da playlist"></div><p class="small" style="margin-top:12px">Chave do YouTube Data API (para tocar pelo nome)'+(ls.g('yt.key')?' — já salva':'')+':</p><div class="cmd"><input id="ytkey" type="password" autocomplete="off" placeholder="AIza..." aria-label="Chave do YouTube"><button data-act="ytsave">Salvar</button></div></div>';
+
+/* ---------- Trava por voz (beta): impressão de voz simples ---------- */
+let vm=null,vbuf=[],vlen=0,vpt='',en={s:[]};
+async function vmStart(){
+ if(vm)return;
+ const st=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+ const ac=new (window.AudioContext||window.webkitAudioContext)(),src=ac.createMediaStreamSource(st),pr=ac.createScriptProcessor(4096,1,1);
+ pr.onaudioprocess=e=>{if(speaking||S.enr){if(speaking){vbuf=[];vlen=0;return}}const d=new Float32Array(e.inputBuffer.getChannelData(0));vbuf.push(d);vlen+=d.length;while(vbuf.length>1&&vlen-vbuf[0].length>ac.sampleRate*6)vlen-=vbuf.shift().length};
+ src.connect(pr);pr.connect(ac.destination);ac.resume();vm={st,ac,pr}}
+function vmStop(){if(vm){vm.st.getTracks().forEach(t=>t.stop());try{vm.ac.close()}catch(e){}vm=null;vbuf=[];vlen=0}}
+const snap=sec=>{const all=new Float32Array(vlen);let o=0;for(const c of vbuf){all.set(c,o);o+=c.length}return all.slice(Math.max(0,all.length-Math.floor(vm.ac.sampleRate*sec)))};
+function fft(re,im){const n=re.length;for(let i=1,j=0;i<n;i++){let b=n>>1;for(;j&b;b>>=1)j^=b;j^=b;if(i<j){[re[i],re[j]]=[re[j],re[i]];[im[i],im[j]]=[im[j],im[i]]}}
+ for(let l=2;l<=n;l<<=1){const a=-2*Math.PI/l;for(let i=0;i<n;i+=l)for(let k=0;k<l/2;k++){const c=Math.cos(a*k),s=Math.sin(a*k),x=i+k,y=x+l/2,tr=re[y]*c-im[y]*s,ti=re[y]*s+im[y]*c;re[y]=re[x]-tr;im[y]=im[x]-ti;re[x]+=tr;im[x]+=ti}}}
+function vfeat(x,sr){
+ const d=Math.max(1,Math.round(sr/12000)),sr2=sr/d,n=Math.floor(x.length/d),y=new Float32Array(n);
+ for(let i=0;i<n;i++){let a=0;for(let k=0;k<d;k++)a+=x[i*d+k];y[i]=a/d}
+ const N=256,H=128,B=20,w=Array.from({length:N},(_,i)=>.5-.5*Math.cos(2*Math.PI*i/(N-1)));
+ const mel=f=>2595*Math.log10(1+f/700),imel=m=>700*(Math.pow(10,m/2595)-1),lo=mel(100),hi=mel(Math.min(5500,sr2/2-100)),pts=[];
+ for(let i=0;i<B+2;i++)pts.push(Math.min(N/2-1,Math.floor(N*imel(lo+(hi-lo)*i/(B+1))/sr2)));
+ const fr=[];for(let o=0;o+N+171<=n;o+=H){let e=0;for(let i=0;i<N;i++)e+=y[o+i]*y[o+i];fr.push({o,r:Math.sqrt(e/N)})}
+ if(fr.length<20)return null;
+ const sr_=fr.map(f=>f.r).sort((a,b)=>a-b),thr=Math.max(.004,sr_[Math.floor(sr_.length*.9)]*.3),V=fr.filter(f=>f.r>thr);
+ if(V.length<40)return null;
+ const C=[],F=[];
+ for(const f of V){
+  const re=new Float64Array(N),im=new Float64Array(N);for(let i=0;i<N;i++)re[i]=y[f.o+i]*w[i];fft(re,im);
+  const p=re.map((v,i)=>v*v+im[i]*im[i]),le=[];
+  for(let b=0;b<B;b++){const l=pts[b],c=pts[b+1],r=pts[b+2];let e=0;for(let k=l;k<=r;k++)e+=(k<=c?(c===l?1:(k-l)/(c-l)):(r===c?1:(r-k)/(r-c)))*p[k];le.push(Math.log(e+1e-10))}
+  const cc=[];for(let j=1;j<=12;j++){let a=0;for(let b=0;b<B;b++)a+=le[b]*Math.cos(Math.PI*j*(b+.5)/B);cc.push(a/B)}C.push(cc);
+  let r0=0;for(let i=0;i<512&&f.o+i+171<n;i++)r0+=y[f.o+i]*y[f.o+i];let best=0,bl=0;
+  for(let l=30;l<=171;l++){let a=0;for(let i=0;i<512&&f.o+i+l<n;i++)a+=y[f.o+i]*y[f.o+i+l];if(a/r0>best){best=a/r0;bl=l}}
+  if(best>.4&&bl)F.push(sr2/bl)}
+ if(F.length<8)return null;
+ const m=[],sd=[];for(let j=0;j<12;j++){const col=C.map(c=>c[j]),mu=col.reduce((a,b)=>a+b,0)/col.length;m.push(mu);sd.push(Math.sqrt(col.reduce((a,b)=>a+(b-mu)**2,0)/col.length))}
+ F.sort((a,b)=>a-b);return{m:m.concat(sd),f:F[F.length>>1]}}
+function vdist(a,p){let z=0;for(let i=0;i<24;i++){const q=Math.max(p.s[i],.15*Math.abs(p.m[i]),.3);z+=((a.m[i]-p.m[i])/q)**2}return Math.sqrt(z/24+(12*Math.log2(a.f/p.f)/4)**2)}
+const mean=a=>a.reduce((x,y)=>x+y,0)/a.length;
+function prof(A){const m=[],s=[];for(let i=0;i<24;i++){const c=A.map(a=>a.m[i]),mu=mean(c);m.push(mu);s.push(Math.sqrt(mean(c.map(v=>(v-mu)**2))))}const fs=A.map(a=>a.f).sort((a,b)=>a-b);return{m,s,f:fs[fs.length>>1]}}
+const vpOn=()=>ls.g('vp.on')==='1'&&!!ls.g('vp.p');
+function vpCheck(){
+ const p=JSON.parse(ls.g('vp.p')||'null');if(!p)return{ok:true};
+ if(!vm)return{ok:false,why:'sem microfone de verificação'};
+ const f=vfeat(snap(6),vm.ac.sampleRate);if(!f)return{ok:false,why:'áudio curto ou baixo demais'};
+ const d=vdist(f,p),lim=p.thr*[1.3,1.7,2.2][+ls.g('vp.t')||1];return{ok:d<=lim,d,lim}}
+const VPH=['Jarvis, inicie o cronômetro de descanso de 60 segundos','Jarvis, anote que fiz 12 repetições com 20 quilos no agachamento','Jarvis, coloque a minha playlist de treino','Jarvis, aumente o volume','Jarvis, qual a melhor substituição para o supino reto'];
+const vpMsg=t=>{vpt=t;const e=$('#vpst');if(e)e.textContent=t};
+async function vpRecord(){
+ if(S.enr)return;S.enr=true;
+ try{await vmStart()}catch(e){S.enr=false;vpMsg('Não consegui acessar o microfone. Permita o acesso e tente de novo.');return}
+ vbuf=[];vlen=0;vpMsg('Gravando por 4 segundos… diga: '+VPH[en.s.length]);
+ await new Promise(r=>setTimeout(r,4000));
+ const f=vfeat(snap(4),vm.ac.sampleRate);S.enr=false;
+ if(!f){vpMsg('Não ouvi bem, senhor. Fale mais perto e mais alto e tente de novo.');if(!listening)vmStop();return}
+ en.s.push(f);
+ if(en.s.length<5){vpMsg('Amostra '+en.s.length+'/5 salva. Próxima frase: '+VPH[en.s.length]);render();return}
+ const A=en.s;let mx=0;for(let i=0;i<A.length;i++)mx=Math.max(mx,vdist(A[i],prof(A.filter((_,j)=>j!==i))));
+ const pf=prof(A);pf.thr=Math.max(1,mx);ls.s('vp.p',JSON.stringify(pf));ls.s('vp.on','1');en={s:[]};vpt='Voz cadastrada, senhor.';
+ if(!listening)vmStop();render()}
+const vpPanel=()=>{const has=!!ls.g('vp.p'),on=vpOn(),t=+ls.g('vp.t')||1,off='background:var(--panel);color:var(--tx);border:1px solid var(--line)';
+ return '<div class="hist" style="margin-top:12px"><h3>Trava por voz (beta)</h3><p class="small">'+(has?(on?'Ligada: o Jarvis só obedece à voz cadastrada. Comandos digitados não passam pela trava.':'Voz cadastrada, trava desligada.'):'Cadastre sua voz com 5 frases para o Jarvis ignorar outras vozes. Fique num lugar silencioso.')+'</p>'
+ +(has?'':'<p class="small" id="vpst">'+(vpt||'Frase 1: '+VPH[0])+'</p><div class="cmd"><button data-act="vprec">Gravar amostra '+(en.s.length+1)+'/5</button></div>')
+ +(has?'<div class="cmd"><button data-act="vptog">'+(on?'Desligar trava':'Ligar trava')+'</button><button data-act="vptol" style="'+off+'">Tolerância: '+['baixa','normal','alta'][t]+'</button></div><div class="cmd"><button data-act="vpdel" style="'+off+'">Apagar e recadastrar</button></div>':'')
+ +'<p class="small">Aviso: é um filtro simples, não uma segurança forte. Uma gravação da sua voz ou uma voz muito parecida pode passar, e a verificação pode errar com barulho ou rouquidão. Se o Jarvis não te reconhecer, aumente a tolerância.</p></div>'};
 
 /* ---------- eventos ---------- */
 document.addEventListener('click',e=>{
@@ -308,18 +360,19 @@ document.addEventListener('click',e=>{
  else if(a==='stop')stopRest();
  else if(a==='mic')toggleMic();
  else if(a==='send'){const i=$('#ti');if(i.value.trim()){run(i.value.replace(/^jarvis[,\s]*/i,''));i.value=''}}
- else if(a==='musspot'){ls.s('mus','spotify');render()}
- else if(a==='musyt'){ls.s('mus','youtube');render()}
  else if(a==='ytsave'){ls.s('yt.pl',$('#ytpl').value.trim());const k=$('#ytkey').value.trim();if(k)ls.s('yt.key',k);render()}
+ else if(a==='vprec')vpRecord()
+ else if(a==='vptog'){if(vpOn())ls.s('vp.on','0');else{ls.s('vp.on','1');if(listening)vmStart().catch(()=>{})}render()}
+ else if(a==='vptol'){ls.s('vp.t',String(((+ls.g('vp.t')||1)+1)%3));render()}
+ else if(a==='vpdel'&&confirm('Apagar sua voz cadastrada?')){ls.d('vp.p');ls.d('vp.on');en={s:[]};vpt='';if(!listening)vmStop();render()}
+ else if(a==='ytnow'){const v=$('#ytnow').value.trim();if(v)run(/youtu/i.test(v)?v:'toque '+v)}
+ else if(a==='vup'||a==='vdn'){ytAction({k:'volrel',d:a==='vup'?15:-15}).catch(()=>{})}
  else if(a==='ytclose'){if(ytP)ytP.pauseVideo();$('#ytbox').style.display='none'}
  else if(a==='aisave'){const v=$('#aikey').value.trim();if(v)ls.s('gm.key',v);ls.s('gm.model',$('#gmmodel').value.trim());render()}
  else if(a==='aiout'){ls.d('gm.key');hist=[];render()}
- else if(a==='spsave'){ls.s('sp.id',$('#spid').value.trim());render()}
- else if(a==='spconn'){const i=$('#spid');if(i&&i.value.trim())ls.s('sp.id',i.value.trim());spLogin()}
- else if(a==='spout'){['sp.at','sp.rt','sp.exp'].forEach(k=>ls.d(k));render()}
  else if(a==='clear'&&confirm('Apagar todo o histórico?')){logs=[];persist();render()}});
-document.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target.id==='ti')document.querySelector('[data-act=send]').click()});
-render();spCallback();
+document.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target.id==='ti')document.querySelector('[data-act=send]').click();if(e.key==='Enter'&&e.target.id==='ytnow')document.querySelector('[data-act=ytnow]').click()});
+render();
 if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
 </script>
 </body>

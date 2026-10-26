@@ -4,6 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Treino Jarvis</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="theme-color" content="#0A111D">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Treino">
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 :root{color-scheme:dark;--ink:#0A111D;--panel:#111C2E;--line:#22324D;--tx:#E6EEF9;--mute:#8A9BB5;--gold:#F0B33C;--cy:#5ADBFF;--ok:#2FBF8A;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
@@ -144,7 +150,7 @@ let listening=false,rec=null,speaking=false;
 function viewJ(){
  let h='<h1>Jarvis</h1><div class="orbwrap"><button class="orb '+(listening?'on':'')+'" data-act="mic" aria-pressed="'+listening+'">'+(listening?'Escutando':'Ativar')+'</button></div><div class="status" id="st">'+(listening?'Diga “Jarvis” para chamar.':(SR?'Toque para ativar a escuta contínua.':'Este navegador não tem reconhecimento de voz. Use o campo de texto.'))+'</div>';
  h+='<div class="chips">'+['Jarvis, inicie o cronômetro de descanso de 60 segundos','Jarvis, anote que fiz 12 repetições com 20 kg no agachamento','Jarvis, pesquise no Google qual a melhor substituição para o supino reto','Jarvis, coloque a minha playlist de treino no Spotify'].map(c=>'<button data-ex-cmd="'+c+'">'+c.replace('Jarvis, ','')+'</button>').join('')+'</div><div id="chat">'+chatHtml()+'</div>';
- return h+'<div class="cmd"><input id="ti" placeholder="Digite um comando" aria-label="Comando"><button data-act="send">Enviar</button></div><p class="small">A escuta funciona enquanto esta página estiver aberta. Se o microfone for bloqueado, abra o link em tela cheia e permita o acesso.</p>'+spPanel()}
+ return h+'<div class="cmd"><input id="ti" placeholder="Digite um comando" aria-label="Comando"><button data-act="send">Enviar</button></div><p class="small">A escuta funciona enquanto esta página estiver aberta. Se o microfone for bloqueado, abra o link em tela cheia e permita o acesso.</p>'+spPanel()+aiPanel()}
 const chatHtml=()=>chat.map(m=>'<div class="msg '+m.w+'">'+m.t.replace(/</g,'&lt;')+(m.l?'<br><a href="'+m.l+'" target="_blank" rel="noopener">Abrir</a>':'')+'</div>').join('');
 function msg(w,t,l){chat.push({w,t,l});const c=$('#chat');if(c)c.innerHTML=chatHtml()}
 function render(){
@@ -169,8 +175,8 @@ function handle(raw){
  if(/proxima (musica|faixa)/.test(t))return{text:'Próxima faixa, senhor.',sp:{k:'next'}};
  if(/spotify|playlist|toque|tocar|coloque|musica/.test(t)){let q='playlist de treino';if(!/playlist/.test(t)&&(m=raw.match(/(?:toque|tocar|coloque|coloca)\s+(.+)/i)))q=m[1].replace(/\s*no spotify/i,'');
   return{text:'Abrindo “'+q+'” no Spotify, senhor.',link:'https://open.spotify.com/search/'+encodeURIComponent(q),sp:{k:/playlist/.test(t)?'playlist':'track',q}}}
- return{text:'Desculpe, senhor, ainda não sei fazer isso.'}}
-async function run(raw){msg('u',raw);const r=handle(raw);if(r.sp&&spReady()){try{say(await spAction(r.sp))}catch(e){say(e.message)}return}say(r.text);if(r.link){msg('j','Link pronto.',r.link);try{window.open(r.link,'_blank','noopener')}catch(e){}}}
+ return{ai:true}}
+async function run(raw){msg('u',raw);const r=handle(raw);if(r.sp&&spReady()){try{say(await spAction(r.sp))}catch(e){say(e.message)}return}if(r.ai){await askAI(raw);return}say(r.text);if(r.link){msg('j','Link pronto.',r.link);try{window.open(r.link,'_blank','noopener')}catch(e){}}}
 function heard(raw){
  if(speaking)return;
  if(/jarvis/i.test(raw)){const rest=raw.replace(/.*?jarvis[,.!\s]*/i,'').trim();
@@ -227,6 +233,36 @@ async function spAction({k,q}){
  await spApi('/me/player/play',{method:'PUT',body:JSON.stringify({uris:[tr.uri]})});return'Tocando '+tr.name+', de '+tr.artists[0].name+'.'}
 const spPanel=()=>{const on=spReady();return '<div class="hist" style="margin-top:18px"><h3>Spotify</h3><p class="small">'+(on?'Conectado. O Jarvis controla o Spotify do seu aparelho.':'Cole o Client ID do seu app no Spotify e conecte.')+'</p><div class="cmd"><input id="spid" placeholder="Client ID" value="'+ls.g('sp.id')+'" aria-label="Client ID do Spotify"><button data-act="spsave">Salvar</button></div><p class="small">Redirect URI para cadastrar no Spotify:<br><b>'+SPR()+'</b></p><div class="cmd"><button data-act="spconn">'+(on?'Reconectar':'Conectar ao Spotify')+'</button>'+(on?'<button data-act="spout" style="background:var(--panel);color:var(--tx);border:1px solid var(--line)">Desconectar</button>':'')+'</div></div>'};
 
+/* ---------- IA (Claude Haiku, resposta em streaming) ---------- */
+let hist=[],pend=0;
+function sayq(t){if(!('speechSynthesis' in window))return;const u=new SpeechSynthesisUtterance(t);u.lang='pt-BR';const v=speechSynthesis.getVoices().find(v=>v.lang&&v.lang.startsWith('pt'));if(v)u.voice=v;u.rate=1;u.pitch=.8;speaking=true;pend++;u.onend=u.onerror=()=>{pend--;if(pend<=0)setTimeout(()=>{if(pend<=0)speaking=false},500)};speechSynthesis.speak(u)}
+const sys=()=>'Você é o JARVIS, assistente de voz de um app de treino. Responda sempre em português do Brasil, de forma direta e cortês, chamando o usuário de "senhor". Suas respostas são faladas em voz alta: no máximo 3 frases curtas, sem listas, sem markdown e sem emojis. Se a pergunta for sobre treino, use o histórico do usuário quando ajudar. Últimas séries do usuário: '+(logs.slice(-12).map(l=>(X[l.ex]?X[l.ex].n:l.ex)+' '+l.kg+'kg x'+l.reps).join('; ')||'nenhuma')+'.';
+async function askAI(q){
+ const key=ls.g('ai.key');
+ if(!key){say('Preciso da chave da IA, senhor. Configure no quadro Inteligência, na aba Jarvis.');return}
+ hist.push({role:'user',content:q});
+ const m={w:'j',t:'…'};chat.push(m);
+ const upd=()=>{const c=$('#chat');if(c)c.innerHTML=chatHtml()};upd();
+ try{
+  const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'content-type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-haiku-5-5',max_tokens:300,stream:true,system:sys(),messages:hist})});
+  if(!r.ok)throw new Error(r.status===401?'A chave da IA parece inválida, senhor.':r.status===429?'Muitas perguntas em sequência, senhor. Tente de novo em instantes.':'A IA retornou o erro '+r.status+'. Verifique se há crédito na conta da API.');
+  const rd=r.body.getReader(),dec=new TextDecoder();let buf='',full='',sp='';
+  while(true){
+   const {done,value}=await rd.read();if(done)break;
+   buf+=dec.decode(value,{stream:true});const lines=buf.split('\n');buf=lines.pop();
+   for(const ln of lines){
+    if(!ln.startsWith('data:'))continue;
+    let j;try{j=JSON.parse(ln.slice(5))}catch(e){continue}
+    if(j.type==='content_block_delta'&&j.delta&&j.delta.text){
+     full+=j.delta.text;sp+=j.delta.text;m.t=full;upd();
+     let k;while((k=sp.search(/[.!?](\s|$)/))>=0&&k<sp.length-1){sayq(sp.slice(0,k+1));sp=sp.slice(k+1).trimStart()}}}}
+  if(sp.trim())sayq(sp);
+  hist.push({role:'assistant',content:full});hist=hist.slice(-8);
+ }catch(e){
+  hist.pop();chat.splice(chat.indexOf(m),1);
+  say(e instanceof TypeError?'Não consegui falar com a IA, senhor. Verifique a conexão.':e.message)}}
+const aiPanel=()=>'<div class="hist" style="margin-top:12px"><h3>Inteligência</h3><p class="small">'+(ls.g('ai.key')?'Chave salva neste aparelho. O Jarvis responde qualquer pergunta que não seja um comando.':'Cole a chave da API da Anthropic para o Jarvis responder qualquer pergunta.')+'</p><div class="cmd"><input id="aikey" type="password" autocomplete="off" placeholder="sk-ant-..." aria-label="Chave da API"><button data-act="aisave">Salvar</button></div>'+(ls.g('ai.key')?'<div class="cmd"><button data-act="aiout" style="background:var(--panel);color:var(--tx);border:1px solid var(--line)">Remover chave</button></div>':'')+'</div>';
+
 /* ---------- eventos ---------- */
 document.addEventListener('click',e=>{
  const b=e.target.closest('button');if(!b)return;
@@ -241,12 +277,15 @@ document.addEventListener('click',e=>{
  else if(a==='stop')stopRest();
  else if(a==='mic')toggleMic();
  else if(a==='send'){const i=$('#ti');if(i.value.trim()){run(i.value.replace(/^jarvis[,\s]*/i,''));i.value=''}}
+ else if(a==='aisave'){const v=$('#aikey').value.trim();if(v){ls.s('ai.key',v);render()}}
+ else if(a==='aiout'){ls.d('ai.key');hist=[];render()}
  else if(a==='spsave'){ls.s('sp.id',$('#spid').value.trim());render()}
  else if(a==='spconn'){const i=$('#spid');if(i&&i.value.trim())ls.s('sp.id',i.value.trim());spLogin()}
  else if(a==='spout'){['sp.at','sp.rt','sp.exp'].forEach(k=>ls.d(k));render()}
  else if(a==='clear'&&confirm('Apagar todo o histórico?')){logs=[];persist();render()}});
 document.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target.id==='ti')document.querySelector('[data-act=send]').click()});
 render();spCallback();
+if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
 </script>
 </body>
 </html>
